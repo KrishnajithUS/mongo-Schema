@@ -1,9 +1,10 @@
+2024/06/11 23:57:58 Total Insertions : 1
 goos: linux
 goarch: amd64
 pkg: main/queries
-cpu: Intel(R) Core(TM) i5-10300H CPU @ 2.50GHz
-BenchmarkMongoWrite-8               	     812	   1485817 ns/op
-BenchmarkMongoRead-8                	   12309	    101962 ns/op
-BenchmarkMongoReadWriteParallel-8   	    2982	   1852665 ns/op
+cpu: Intel(R) Core(TM) i3-1005G1 CPU @ 1.20GHz
+BenchmarkMongoWrite 	2024/06/11 23:57:58 Total Insertions : 76
+2024/06/11 23:58:00 Total Insertions : 496
+     420	   3393821 ns/op
 PASS
-ok  	main/queries	9.190s
+ok  	main/queries	1.663s
