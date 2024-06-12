@@ -4,74 +4,70 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"main/queries"
+
 	"os"
+	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/event"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var insertCount int = 0
-var eventArray []*event.ServerDescriptionChangedEvent
-
-var writeServers = make(map[string]int)
-var readServers = make(map[string]int)
-
-func logEvents() {
-	log.Println("Total Insertions:", insertCount*10)
+type User struct {
+	ID    primitive.ObjectID `bson:"_id,omitempty"`
+	Name  string             `bson:"name"`
+	Email string             `bson:"email,omitempty"`
+	Phone string             `bson:"phone"`
+	Age   int                `bson:"age"`
+	Sex   string             `bson:"sex,omitempty"`
 }
 
-
-var cmdMonitor *event.CommandMonitor = &event.CommandMonitor{
-	Started: func(_ context.Context, evt *event.CommandStartedEvent) {
-		if evt.CommandName == "insert" {
-			writeServers[evt.ConnectionID]++
-		}
-		if evt.CommandName == "find" {
-			readServers[evt.ConnectionID]++
-		}
-	},
-	Succeeded: func(_ context.Context, evt *event.CommandSucceededEvent) {
-		if evt.CommandName == "insert" {
-			insertCount++
-		}
-	},
-	Failed: func(_ context.Context, evt *event.CommandFailedEvent) {
-	},
-}
-
-var srvMonitor *event.ServerMonitor = &event.ServerMonitor{
-	ServerDescriptionChanged: func(e *event.ServerDescriptionChangedEvent) {
-		eventArray = append(eventArray, e)
-	},
-}
-func getReplicaSetStatus(client *mongo.Client, ctx context.Context) (primary string, secondaries []string, err error) {
-	var result bson.M
-	err = client.Database("admin").RunCommand(ctx, bson.D{{Key: "replSetGetStatus", Value: 1}}).Decode(&result)
+// var ctx * context.Context
+func MongoWrite(users *mongo.Collection, wg *sync.WaitGroup) {
+	defer wg.Done()
+	start := time.Now()
+	log.Println("Mongo write Started at: ", start)
+	// res, err := users.InsertMany(context.TODO(), []interface{}{
+	// 	bson.D{{Key: "name", Value: "A"}, {Key: "email", Value: "Toni Morrison"}, {Key: "age", Value: 24}},
+	// 	bson.D{{Key: "name", Value: "B"}, {Key: "email", Value: "Toni Morrison"}, {Key: "age", Value: 47}},
+	// 	bson.D{{Key: "name", Value: "C"}, {Key: "phone", Value: "934252345234"}, {Key: "sex", Value: "F"}},
+	// 	bson.D{{Key: "name", Value: "D"}, {Key: "email", Value: "Toni Morrison"}, {Key: "age", Value: 24}},
+	// 	bson.D{{Key: "name", Value: "E"}, {Key: "email", Value: "Toni Morrison"}, {Key: "age", Value: 47}},
+	// 	bson.D{{Key: "name", Value: "F"}, {Key: "phone", Value: "934252345234"}, {Key: "sex", Value: "F"}},
+	// 	bson.D{{Key: "name", Value: "G"}, {Key: "email", Value: "Toni Morrison"}, {Key: "age", Value: 24}},
+	// 	bson.D{{Key: "name", Value: "h"}, {Key: "email", Value: "Toni Morrison"}, {Key: "age", Value: 47}},
+	// 	bson.D{{Key: "name", Value: "i"}, {Key: "phone", Value: "934252345234"}, {Key: "sex", Value: "F"}},
+	// 	bson.D{{Key: "name", Value: "test4"}, {Key: "phone", Value: "934252345234"}, {Key: "sex", Value: "F"}},
+	// })
+	res, err := users.InsertOne(context.TODO(), []interface{}{
+		bson.D{{Key: "name", Value: "test5"}, {Key: "phone", Value: "934252345234"}, {Key: "sex", Value: "F"}},
+	})
+	//res, err := users.InsertOne(context.TODO(), bson.D{{Key: "name", Value: "test"}, {Key: "phone", Value: "934252345234"}, {Key: "sex", Value: "F"}})
+	log.Println("Insert Result :", res.InsertedID)
+	log.Println("Mongo Write finished at : ", start)
+	log.Println("Mongo Write time taken : ", time.Since(start))
 	if err != nil {
-		return "", nil, err
+		log.Println("Error", err.Error())
 	}
 
-	members := result["members"].(bson.A)
-	for _, member := range members {
-		memberMap := member.(bson.M)
-		stateStr := memberMap["stateStr"].(string)
-		name := memberMap["name"].(string)
-		if stateStr == "PRIMARY" {
-			primary = name
-		} else if stateStr == "SECONDARY" {
-			secondaries = append(secondaries, name)
-		}
-	}
-	return primary, secondaries, nil
+}
+
+func MongoRead(users *mongo.Collection, wg *sync.WaitGroup) {
+	defer wg.Done()
+	var userData User
+	start := time.Now()
+	log.Println("Mongo Reading Started at: ", start)
+	userCursor := users.FindOne(context.TODO(), bson.D{{Key: "name", Value: "test4"}})
+	log.Println("Mongo Reading finished at : ", start)
+	log.Println("Mongo Reading time taken : ", time.Since(start))
+	err := userCursor.Decode(&userData)
+	fmt.Println(userData, err)
 }
 
 func main() {
-	
-	lst :=[]int{5, 50, 500, 5000}
+
 	if len(os.Args) < 1 {
 		panic("Usage: program [readPreference]")
 	}
@@ -84,9 +80,7 @@ func main() {
 		uri = "mongodb://sa:Password123@127.0.10.1:27017,127.0.10.2:27017,127.0.10.3:27017/?replicaSet=rs0"
 	}
 	fmt.Println(uri)
-
-	clientOpts := options.Client().ApplyURI(uri).SetServerMonitor(srvMonitor).SetMonitor(cmdMonitor)
-
+	clientOpts := options.Client().ApplyURI(uri)
 	client, err := mongo.Connect(context.TODO(), clientOpts)
 	if err != nil {
 		log.Println(err)
@@ -100,47 +94,50 @@ func main() {
 	DB := client.Database("newDB2")
 	users := DB.Collection("user")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	defer logEvents()
-	
-	for j := range lst{
-		startWrite := time.Now()
-		for i := 0; i < lst[j]; i++ {
-			queries.MongoWrite(users, ctx)
-		}
-		res1,res2, _:= getReplicaSetStatus(client, ctx)
-		
-		elapsedWrite := time.Since(startWrite)
-		log.Printf("MongoWrite took %s for %d iterations", elapsedWrite, lst[j])
-		startRead := time.Now()
-		queries.MongoRead(users, ctx)
-		elapsedRead := time.Since(startRead)
-		log.Printf("MongoRead took %s", elapsedRead)
+	var wg sync.WaitGroup
 
+	wg.Add(2)
+	go MongoRead(users, &wg)
+	go MongoWrite(users, &wg)
 
-		// Log the servers used for write and read operations
-		log.Println("Write operations were performed on the following servers:")
-		for server, count := range writeServers {
-			log.Printf("Server: %s, Count: %d", server, count)
-		}
+	wg.Wait()
+	//	elapsedRead := time.Since(startRead)
+	//	log.Printf("MongoRead took %s", elapsedRead)
+	// primary, seondary, err := getReplicaSetStatus(client, ctx)
+	// if err != nil {
+	// 	log.Println(err)
+	// }
+	// log.Printf("Primary Replicas : ")
 
-		log.Println("Read operations were performed on the following servers:")
-		for server, count := range readServers {
-			log.Printf("Server: %s, Count: %d", server, count)
-		}
+	// fmt.Println(primary)
 
-}
-	file, err := os.OpenFile("events.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %s", err)
-	}
-	defer file.Close()
-
-	// Create a logger that writes to the file
-	logger := log.New(file, "", log.LstdFlags)
-
-	for i := range eventArray {
-		logger.Println("Writing Events", eventArray[i])
-	}
+	// log.Printf("Secondary Replicas : ")
+	// for i := range seondary {
+	// 	fmt.Println(seondary[i])
+	// }
+	//log.Printf("Read Servers: %v", readServers)
+	//}
+	// file, err := os.OpenFile("events.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	log.Fatalf("Failed to open log file: %s", err)
+	// }
+	// defer file.Close()
+	// // Create a logger that writes to the file
+	// logger := log.New(file, "", log.LstdFlags)
+	// // Log the servers used for write and read operations
+	// logger.Println("Started operations were performed on the following servers:")
+	// for server := range cmdMonitorStart {
+	// 	logger.Println(cmdMonitorStart[server])
+	// }
+	// logger.Println("Success operations were performed on the following servers:")
+	// for server := range cmdMonitorSucceed {
+	// 	logger.Println(cmdMonitorSucceed[server])
+	// }
+	// logger.Println("Failed operations were performed on the following servers:")
+	// for server := range cmdMonitorFailed {
+	// 	logger.Println(cmdMonitorSucceed[server])
+	// }
+	// for i := range eventArray {
+	// 	logger.Println("Writing Events", eventArray[i])
+	// }
 }
